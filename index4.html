@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>PEPPERONI PETER DINKLAGE — Pizza Sky Shooter</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+
+<!-- Retro pixel font from Google Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --ui-color: #ffd96b;
+    --ui-outline: #0b1220;
+    --title-size: clamp(18px, 4.2vw, 48px);
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #87CEEB; /* fallback light blue */
+    font-family: monospace;
+    -webkit-font-smoothing: none;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Fullscreen canvas */
+  #gameCanvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: block;
+    image-rendering: pixelated;
+    background: #87CEEB; /* light blue sky */
+  }
+
+  /* Retro header */
+  .retro-header {
+    position: fixed;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    pointer-events: none;
+    text-align: center;
+    user-select: none;
+    line-height: 1;
+  }
+
+  .retro-title {
+    font-family: "Press Start 2P", monospace;
+    font-size: var(--title-size);
+    letter-spacing: 2px;
+    color: var(--ui-color);
+    text-shadow:
+      -2px -2px 0 var(--ui-outline),
+       2px -2px 0 var(--ui-outline),
+      -2px  2px 0 var(--ui-outline),
+       2px  2px 0 var(--ui-outline),
+      0 0 8px rgba(255, 200, 120, 0.25);
+  }
+
+  .retro-sub {
+    margin-top: 4px;
+    font-family: "Press Start 2P", monospace;
+    font-size: 10px;
+    color: #ffd0a6;
+    text-shadow: 1px 1px 0 var(--ui-outline);
+    opacity: 0.9;
+  }
+
+  /* UI overlay */
+  .ui {
+    position: fixed;
+    top: calc(8px + 3.2vh + 10px);
+    left: 10px;
+    color: #fff;
+    z-index: 10;
+    text-shadow: 2px 2px 0 #000;
+    font-size: 20px;
+    display: flex;
+    gap: 20px;
+    align-items: center;
+  }
+
+  .hearts { display:flex; gap:6px; align-items:center; }
+  .hearts img { image-rendering: pixelated; width:24px; height:24px; }
+
+  .hint {
+    position: fixed;
+    top: calc(8px + 3.2vh + 10px);
+    right: 10px;
+    font-size: 14px;
+    color: #fff;
+    opacity: 0.8;
+    text-shadow: 1px 1px 0 #000;
+  }
+
+  @media (max-width:480px) {
+    .retro-sub { display:none; }
+    :root { --title-size: 14px; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<!-- Retro header -->
+<div class="retro-header" aria-hidden="true">
+  <div class="retro-title">PEPPERONI PETER DINKLAGE</div>
+  <div class="retro-sub">PRESS START TO CRUSH MUSHROOMS</div>
+</div>
+
+<!-- UI overlay -->
+<div class="ui">
+  <div class="score">Score: <span id="score">0</span></div>
+  <div class="hearts" id="hearts"></div>
+</div>
+<div class="hint">← ↑ ↓ → move • Space shoot • P pause</div>
+
+<script>
+/* === GLOBALS === */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d', { alpha: false });
+
+let W = window.innerWidth, H = window.innerHeight;
+function resizeCanvas() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W;
+  canvas.height = H;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+let last = 0, dt = 0, paused = false;
+const KEYS = {};
+window.addEventListener('keydown', e => { KEYS[e.code] = true; if (e.code === 'KeyP') paused = !paused; });
+window.addEventListener('keyup', e => { KEYS[e.code] = false; });
+
+/* === RESOURCES === */
+const resources = {
+  playerSrc: 'player.png',
+  heartSrc: 'heart.png',
+  mushroomSrc: 'mushroom.png'
+};
+function loadImage(src){ return new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=src; }); }
+
+let imgs = {};
+async function init(){
+  try { imgs.player = await loadImage(resources.playerSrc); } catch(e){ imgs.player = genPlaceholder(32,'#ffcc00'); }
+  try { imgs.heart = await loadImage(resources.heartSrc); } catch(e){ imgs.heart = genHeart(); }
+  try { imgs.mushroom = await loadImage(resources.mushroomSrc); } catch(e){ imgs.mushroom = genMushroom(); }
+
+  reset();
+  requestAnimationFrame(loop);
+}
+
+/* === FALLBACK GENERATORS === */
+function genPlaceholder(size, color){
+  const c=document.createElement('canvas'); c.width=size; c.height=size;
+  const cc=c.getContext('2d'); cc.fillStyle=color; cc.fillRect(0,0,size,size); return c;
+}
+function genHeart(){
+  const c=document.createElement('canvas'); c.width=16; c.height=16;
+  const cc=c.getContext('2d');
+  cc.fillStyle='#000'; cc.fillRect(0,0,16,16);
+  cc.fillStyle='#ff0000';
+  cc.fillRect(3,2,3,3); cc.fillRect(10,2,3,3);
+  cc.fillRect(2,5,12,4); cc.fillRect(5,9,6,4);
+  cc.fillRect(7,13,2,2);
+  return c;
+}
+function genMushroom(){
+  const c=document.createElement('canvas'); c.width=32; c.height=32;
+  const cc=c.getContext('2d');
+  cc.fillStyle='#000'; cc.fillRect(0,0,32,32);
+  cc.fillStyle='#ff3a3a'; cc.fillRect(4,4,24,8);
+  cc.fillStyle='#fff'; cc.fillRect(8,12,16,12);
+  return c;
+}
+
+/* === CLOUD SYSTEM === */
+let clouds = [];
+function createCloud() {
+  return {
+    x: rand(W, W + 400),
+    y: rand(20, H * 0.6),
+    w: rand(80, 220),
+    h: rand(40, 90),
+    speed: rand(30, 80),  // <-- doubled from 15–40 to 30–80
+    opacity: rand(0.6, 1)
+  };
+}
+function initClouds() {
+  clouds = [];
+  for (let i = 0; i < 10; i++) {
+    clouds.push(createCloud());
+    clouds[i].x = rand(0, W); // scatter initial clouds
+  }
+}
+
+/* === GAME STATE === */
+let state = {};
+function reset() {
+  state = {
+    player: { x: W*0.25, y: H*0.5, w:160, h:160, speed:320, bobPhase:0 },
+    bullets: [],
+    enemies: [],
+    enemyTimer: 0,
+    score: 0,
+    health: 3,
+    difficulty: 1,
+    particles: []
+  };
+  initClouds();
+  document.getElementById('score').textContent = '0';
+  updateHearts();
+}
+
+function updateHearts() {
+  const heartsDiv = document.getElementById('hearts');
+  heartsDiv.innerHTML = '';
+  for (let i = 0; i < state.health; i++) {
+    const img = document.createElement('img');
+    try {
+      img.src = imgs.heart.toDataURL ? imgs.heart.toDataURL() : resources.heartSrc;
+    } catch(e) {
+      img.src = resources.heartSrc;
+    }
+    heartsDiv.appendChild(img);
+  }
+}
+
+function rand(a,b){ return Math.random()*(b-a)+a; }
+
+/* === ENEMY SPAWN === */
+function spawnEnemy() {
+  const size = Math.floor(rand(32,96));
+  const y = rand(50, H - size - 50);
+  const baseSpeed = 200;
+  const speedAdjust = (96 - size) * 1.5;
+
+  state.enemies.push({
+    x: W + 50, y, w: size, h: size,
+    vx: -(baseSpeed + speedAdjust + state.difficulty * 40),
+    hp: Math.max(1, Math.ceil(size / 48))
+  });
+}
+
+/* === GAME LOOP === */
+function loop(ts) {
+  if (!last) last = ts;
+  dt = (ts - last) / 1000;
+  last = ts;
+
+  if (!paused) {
+    update(dt);
+    render();
+  } else {
+    render();
+    drawPause();
+  }
+  requestAnimationFrame(loop);
+}
+
+function update(dt) {
+  const p = state.player;
+
+  /* Player movement */
+  if (KEYS['ArrowLeft']||KEYS['KeyA']) p.x -= p.speed * dt;
+  if (KEYS['ArrowRight']||KEYS['KeyD']) p.x += p.speed * dt;
+  if (KEYS['ArrowUp']||KEYS['KeyW']) p.y -= p.speed * dt;
+  if (KEYS['ArrowDown']||KEYS['KeyS']) p.y += p.speed * dt;
+
+  p.x = Math.max(20, Math.min(W - p.w - 20, p.x));
+  p.y = Math.max(24, Math.min(H - p.h - 20, p.y));
+
+  /* Shooting */
+  if ((KEYS['Space'] || KEYS['KeyK']) && (!state.lastShot || (performance.now() - state.lastShot) > 160)) {
+    shoot();
+    state.lastShot = performance.now();
+  }
+
+  /* Bobbing animation */
+  p.bobPhase += dt * 6;
+  p.y += Math.sin(p.bobPhase) * 0.25;
+
+  /* Bullets */
+  for (let i = state.bullets.length-1; i >= 0; i--) {
+    const b = state.bullets[i];
+    b.x += b.vx * dt;
+    if (b.x > W + 50) state.bullets.splice(i,1);
+  }
+
+  /* Enemies */
+  state.enemyTimer -= dt;
+  if (state.enemyTimer <= 0) {
+    spawnEnemy();
+    state.enemyTimer = rand(0.6,1.4) - Math.min(0.5, state.difficulty * 0.06);
+    state.difficulty += 0.01 * dt;
+  }
+
+  for (let ei = state.enemies.length-1; ei >= 0; ei--) {
+    const e = state.enemies[ei];
+    e.x += e.vx * dt;
+    if (e.x + e.w < -100) {
+      state.enemies.splice(ei,1);
+      continue;
+    }
+
+    // Bullets hit enemies
+    for (let bi = state.bullets.length-1; bi >= 0; bi--) {
+      const b = state.bullets[bi];
+      if (rectsOverlap(b, e)) {
+        e.hp -= 1;
+        state.bullets.splice(bi,1);
+        if (e.hp <= 0) {
+          state.score += 100;
+          document.getElementById('score').textContent = state.score;
+          spawnExplosion(e.x + e.w/2, e.y + e.h/2);
+          state.enemies.splice(ei,1);
+        }
+        break;
+      }
+    }
+
+    // Player collision
+    if (rectsOverlap(e, {x:p.x+p.w*0.25,y:p.y+p.h*0.25,w:p.w*0.5,h:p.h*0.5})) {
+      state.enemies.splice(ei,1);
+      state.health -= 1;
+      updateHearts();
+      if (state.health <= 0) gameOver();
+    }
+  }
+
+  /* Clouds movement */
+  for (let c of clouds) {
+    c.x -= c.speed * dt;
+    if (c.x + c.w < -50) {
+      Object.assign(c, createCloud()); // respawn cloud
+      c.x = W + rand(50,200);
+    }
+  }
+
+  /* Particles */
+  for (let i = state.particles.length-1; i >= 0; i--) {
+    const par = state.particles[i];
+    par.x += par.vx * dt;
+    par.y += par.vy * dt;
+    par.life -= dt;
+    if (par.life <= 0) state.particles.splice(i,1);
+  }
+}
+
+/* === SHOOTING === */
+function shoot() {
+  const p = state.player;
+  state.bullets.push({ x:p.x+p.w*0.9, y:p.y+p.h*0.45, vx:700, w:8, h:4 });
+  state.bullets.push({ x:p.x+p.w*0.9, y:p.y+p.h*0.65, vx:700, w:8, h:4 });
+}
+
+function spawnExplosion(x,y){
+  for (let i=0; i<12; i++) {
+    state.particles.push({
+      x, y,
+      vx: rand(-160,160),
+      vy: rand(-200,40),
+      size: rand(2,6),
+      life: rand(0.3,0.7),
+      color: ['#ffde59','#ff7b7b','#ff984f'][Math.floor(rand(0,3))]
+    });
+  }
+}
+
+function rectsOverlap(a,b) {
+  return a.x < b.x + b.w &&
+         a.x + (a.w||0) > b.x &&
+         a.y < b.y + b.h &&
+         (a.y + (a.h||0)) > b.y;
+}
+
+function gameOver(){
+  paused = true;
+  setTimeout(() => {
+    if (confirm('Game Over! Restart?')) {
+      paused = false;
+      reset();
+    }
+  }, 50);
+}
+
+/* === RENDERING === */
+function render() {
+  ctx.clearRect(0,0,W,H);
+
+  // Base sky color
+  ctx.fillStyle = '#87CEEB';
+  ctx.fillRect(0,0,W,H);
+
+  // Clouds
+  for (let c of clouds) {
+    ctx.globalAlpha = c.opacity;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.ellipse(c.x + c.w/2, c.y + c.h/2, c.w/2, c.h/2, 0, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Player
+  const p = state.player;
+  ctx.drawImage(imgs.player, Math.floor(p.x), Math.floor(p.y), p.w, p.h);
+
+  // Bullets
+  ctx.fillStyle = '#fff6a6';
+  for (const b of state.bullets) ctx.fillRect(Math.round(b.x), Math.round(b.y), b.w, b.h);
+
+  // Enemies
+  for (const e of state.enemies) ctx.drawImage(imgs.mushroom, Math.floor(e.x), Math.floor(e.y), e.w, e.h);
+
+  // Particles
+  for (const par of state.particles) {
+    ctx.globalAlpha = Math.max(0, Math.min(1, par.life));
+    ctx.fillStyle = par.color;
+    ctx.fillRect(par.x, par.y, par.size, par.size);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawPause() {
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 36px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('PAUSED', W/2, H/2);
+}
+
+init();
+</script>
+</body>
+</html>
