@@ -101,10 +101,33 @@
     .retro-sub { display:none; }
     :root { --title-size: 14px; }
   }
+
+.touch-btn {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.3);
+  color: #fff;
+  font-size: 32px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  text-shadow: 1px 1px 0 #000;
+  box-shadow: 0 0 8px rgba(0,0,0,0.4);
+  touch-action: none;
+}
+.touch-btn:active {
+  background: rgba(255,255,255,0.6);
+  transform: scale(0.95);
+}
+
 </style>
 </head>
 <body>
 
+<audio id="bgMusic" src="sml.m4a" loop></audio>
 <canvas id="gameCanvas"></canvas>
 
 <!-- Retro header -->
@@ -119,6 +142,8 @@
   <div class="hearts" id="hearts"></div>
 </div>
 <div class="hint">← ↑ ↓ → move • Space shoot • P pause</div>
+<div class="volume" id="volumeDisplay" style="position:fixed;bottom:10px;left:50%;transform:translateX(-50%);color:#fff;font-family:monospace;font-size:16px;text-shadow:1px 1px 0 #000;">Volume: 50%</div>
+
 
 <script>
 /* === GLOBALS === */
@@ -137,7 +162,29 @@ resizeCanvas();
 
 let last = 0, dt = 0, paused = false;
 const KEYS = {};
-window.addEventListener('keydown', e => { KEYS[e.code] = true; if (e.code === 'KeyP') paused = !paused; });
+window.addEventListener('keydown', e => {
+  KEYS[e.code] = true;
+  if (e.code === 'KeyP') paused = !paused;
+
+  // Volume control 1–5
+  const music = document.getElementById('bgMusic');
+  switch (e.code) {
+    case 'Digit1': music.volume = 0.0; break;
+    case 'Digit2': music.volume = 0.25; break;
+    case 'Digit3': music.volume = 0.5; break;
+    case 'Digit4': music.volume = 0.75; break;
+    case 'Digit5': music.volume = 1.0; break;
+  }
+const volDisplay = document.getElementById('volumeDisplay');
+switch (e.code) {
+  case 'Digit1': music.volume = 0.0; volDisplay.textContent = 'Volume: 0%'; break;
+  case 'Digit2': music.volume = 0.25; volDisplay.textContent = 'Volume: 25%'; break;
+  case 'Digit3': music.volume = 0.5; volDisplay.textContent = 'Volume: 50%'; break;
+  case 'Digit4': music.volume = 0.75; volDisplay.textContent = 'Volume: 75%'; break;
+  case 'Digit5': music.volume = 1.0; volDisplay.textContent = 'Volume: 100%'; break;
+}
+
+});
 window.addEventListener('keyup', e => { KEYS[e.code] = false; });
 
 /* === RESOURCES === */
@@ -156,6 +203,16 @@ async function init(){
 
   reset();
   requestAnimationFrame(loop);
+
+  requestAnimationFrame(loop);
+
+  // Start background music
+  const music = document.getElementById('bgMusic');
+  music.volume = 0.5;
+  music.play().catch(e => {
+    window.addEventListener('keydown', () => music.play(), { once: true });
+    window.addEventListener('click', () => music.play(), { once: true });
+  });
 }
 
 /* === FALLBACK GENERATORS === */
@@ -439,8 +496,74 @@ function drawPause() {
   ctx.fillText('PAUSED', W/2, H/2);
 }
 
+/* === MOBILE TOUCH CONTROLS === */
+const mobileControls = {
+  up: false,
+  down: false,
+  left: false,
+  right: false,
+  shoot: false
+};
+
+function updateMobileKeys() {
+  KEYS['ArrowUp'] = mobileControls.up;
+  KEYS['ArrowDown'] = mobileControls.down;
+  KEYS['ArrowLeft'] = mobileControls.left;
+  KEYS['ArrowRight'] = mobileControls.right;
+  KEYS['Space'] = mobileControls.shoot;
+}
+
+['btnUp','btnDown','btnLeft','btnRight','btnShoot'].forEach(id => {
+  const btn = document.getElementById(id);
+  if (!btn) return;
+
+  btn.addEventListener('touchstart', e => {
+    e.preventDefault();
+    if (id==='btnUp') mobileControls.up = true;
+    if (id==='btnDown') mobileControls.down = true;
+    if (id==='btnLeft') mobileControls.left = true;
+    if (id==='btnRight') mobileControls.right = true;
+    if (id==='btnShoot') mobileControls.shoot = true;
+    updateMobileKeys();
+  }, {passive:false});
+
+  btn.addEventListener('touchend', e => {
+    e.preventDefault();
+    if (id==='btnUp') mobileControls.up = false;
+    if (id==='btnDown') mobileControls.down = false;
+    if (id==='btnLeft') mobileControls.left = false;
+    if (id==='btnRight') mobileControls.right = false;
+    if (id==='btnShoot') mobileControls.shoot = false;
+    updateMobileKeys();
+  }, {passive:false});
+
+  btn.addEventListener('touchcancel', e => {
+    e.preventDefault();
+    if (id==='btnUp') mobileControls.up = false;
+    if (id==='btnDown') mobileControls.down = false;
+    if (id==='btnLeft') mobileControls.left = false;
+    if (id==='btnRight') mobileControls.right = false;
+    if (id==='btnShoot') mobileControls.shoot = false;
+    updateMobileKeys();
+  }, {passive:false});
+});
+
 init();
 </script>
+<!-- Retro-style mobile touch controls -->
+<div id="mobileControls" style="position:fixed;bottom:20px;width:100%;z-index:30;pointer-events:none;">
+  <!-- Left D-pad controls -->
+  <div style="position:absolute;left:20px;bottom:20px;display:grid;grid-template-areas:'up up' 'left right' 'down down';gap:10px;pointer-events:auto;">
+    <div id="btnUp" class="touch-btn" style="grid-area:up;">▲</div>
+    <div id="btnDown" class="touch-btn" style="grid-area:down;">▼</div>
+    <div id="btnLeft" class="touch-btn" style="grid-area:left;">◀</div>
+    <div id="btnRight" class="touch-btn" style="grid-area:right;">▶</div>
+  </div>
+
+  <!-- Right control: shoot -->
+  <div style="position:absolute;right:20px;bottom:20px;pointer-events:auto;">
+    <div id="btnShoot" class="touch-btn">●</div>
+  </div>
+</div>
 </body>
 </html>
-
